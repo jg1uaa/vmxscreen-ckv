@@ -22,7 +22,7 @@ VPATH = $(S)
 
 CFLAGS += -Wall
 HEADER += $(S)
-SRC	= main.c common.c conf.c vmsvga.c bga.c
+SRC	= main.c common.c conf.c vmsvga.c bga.c none.c
 OBJ	= $(addsuffix .o, $(basename $(SRC)))
 SRC.C	= $(filter %.C, $(SRC))
 LDLIBS += -lbms
