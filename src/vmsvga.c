@@ -26,6 +26,7 @@ struct _vmxinf {
 	UW		id;
 	void		*fifobase;
 	UW		fifosize;
+	W		fifoentry;
 	_UW		*fifomem;
 };
 
@@ -64,7 +65,7 @@ LOCAL	struct _vmxinf	VMXinf;
  * (SVGA_FIFO_NUM_REGS = 291) * sizeof(uint32). We use larger value.
  */
 #define	fifoMIN_MIN	0x00001000
-#define	regFIFOSIZE_MIN	0x00020000
+#define	regFIFOSIZE_MIN	0x00010000	// QEMU returns 0x00010000, use this
 
 struct _fifocmd {
 	UW	cmd;
@@ -100,7 +101,7 @@ LOCAL	void	VMSVGAsync(void)
 LOCAL	ERR	VMSVGAinit(void)
 {
 	ERR	err;
-	W	i, n;
+	W	i, n, v[L_DEVCONF_VAL];
 
 	/* create lock */
 	err = CreateLockWN(&VMXinf.lock, "vmsc");
@@ -153,16 +154,26 @@ LOCAL	ERR	VMSVGAinit(void)
 		}
 	}
 
-	/* when USE_VVRAM, use FIFO (if supported) */
-	if (!(Vinf.attr & USE_VVRAM)) VMXinf.fifosize = 0;
-	if (!VMXinf.fifosize) Vinf.attr &= ~USE_VVRAM;
+	/* get FIFO entry size (default:maximum, 0 disables FIFO) */
+	VMXinf.fifoentry = (GetDevConf("VMSVGACMDENTRY", v) > 0) ? v[0] : -1;
+
+	/* USE_VVRAM is controlled by VMSVGACMDENTRY */
+	if (!VMXinf.fifosize || !VMXinf.fifoentry) {
+		VMXinf.fifosize = 0;
+		Vinf.attr &= ~USE_VVRAM;
+	} else {
+		Vinf.attr |= USE_VVRAM;
+	}
 
 	/* map FIFO */
 	err = VMXinf.fifosize ?
 		MapMemory(VMXinf.fifobase, VMXinf.fifosize,
 			  MM_SYSTEM | MM_READ | MM_WRITE | MM_CDIS,
 			  (void *)&VMXinf.fifomem) : ER_OK;
-	if (err < ER_OK) VMXinf.fifosize = 0;
+	if (err < ER_OK) {
+		VMXinf.fifosize = 0;
+		Vinf.attr &= ~USE_VVRAM;
+	}
 
 	err = ER_OK;
 	goto fin0;
@@ -247,7 +258,7 @@ LOCAL	void	VMSVGAsetcmap(COLOR *cmap, W index, W entries)
 /* set display mode */
 LOCAL	void	VMSVGAsetmode(W flg)
 {
-	W	max, entry, v[L_DEVCONF_VAL];
+	W	max;
 
 	/* exit VMware SVGA II mode, required for warm reboot */
 	// XXX the last contents of VGA mode is redisplayed when exiting.
@@ -259,30 +270,36 @@ LOCAL	void	VMSVGAsetmode(W flg)
 		}
 		WriteSVGA(regENABLE, 0);
 		VMXinf.fifosize = 0;
+		Vinf.attr &= ~USE_VVRAM;
 		Unlock(&VMXinf.lock);
 		return;
 	}
 
-	/* enter VMware SVGA II mode */
+	/* initialize */
 	WriteSVGA(regWIDTH, Vinf.act_width);
 	WriteSVGA(regHEIGHT, Vinf.act_height);
 	WriteSVGA(regBPP, Vinf.pixbits >> 8);
-	WriteSVGA(regENABLE, 1);
-	WriteSVGA(regCONFIG, 0);
 
-	/* init FIFO */
 	if (VMXinf.fifosize) {
-		entry = (GetDevConf("VMSVGACMDENTRY", v) > 0) ? v[0] : 0;
 		max = (VMXinf.fifosize - fifoMIN_MIN) / sizeof(struct _fifocmd);
-		if (entry < 0 || entry > max) entry = max;
-		if (entry < CMD_ENTRY_MIN) entry = CMD_ENTRY_MIN;
+		if (VMXinf.fifoentry < 0 || VMXinf.fifoentry > max)
+			VMXinf.fifoentry = max;
+		if (VMXinf.fifoentry < CMD_ENTRY_MIN)
+			VMXinf.fifoentry = CMD_ENTRY_MIN;
 
 		VMXinf.fifomem[fifoMIN] =
 			VMXinf.fifomem[fifoNEXT] = VMXinf.fifomem[fifoSTOP] =
-			VMXinf.fifosize - sizeof(struct _fifocmd) * entry;
+			VMXinf.fifosize - sizeof(struct _fifocmd) *
+			VMXinf.fifoentry;
 		VMXinf.fifomem[fifoMAX] = VMXinf.fifosize;
 		WriteSVGA(regCONFIG, 1);
+	} else {
+		WriteSVGA(regCONFIG, 0);
 	}
+
+	/* enter VMware SVGA II mode */
+	/* QEMU requires regENABLE=1 after regCONFIG=1 */
+	WriteSVGA(regENABLE, 1);
 
 	/* fix display mode information */
 	Vinf.width = Vinf.fb_width = Vinf.act_width;
