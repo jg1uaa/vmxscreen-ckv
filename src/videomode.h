@@ -5,8 +5,10 @@
 #define	MAX_VIDEO_MODE		1
 #define	VALID_VIDEO_MODE(mode)	0
 
-#define	VideoHsize(mode)	((Vinf.attr & USE_VVRAM) ? 3840 : 2560)
-#define	VideoVsize(mode)	((Vinf.attr & USE_VVRAM) ? 1920 : 1600)
+#define	VideoHsize(mode) ((Vinf.attr & USE_VVRAM) ? 3840 : \
+			  (Vinf.framebuf_total >= 16777216) ? 2560 : 1920)
+#define	VideoVsize(mode) ((Vinf.attr & USE_VVRAM) ? 1920 : \
+			  (Vinf.framebuf_total >= 16777216) ? 1600 : 1080)
 
 #if defined(COLOR_CMAP256)
 #define	VideoPixBits(mode)	0x0808

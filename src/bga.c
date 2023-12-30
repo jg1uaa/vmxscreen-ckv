@@ -23,6 +23,9 @@
 #define	VENDOR_BOCHS	0x1234
 #define	DEVICE_BGA	0x1111
 
+#define	VENDOR_INNOTEK	0x80ee
+#define	DEVICE_VBOX	0xbeef
+
 #define	BGA_INDEX	0x1ce
 #define	BGA_DATA	0x1cf
 
@@ -35,8 +38,10 @@
 #define	regBPP		3
 #define	regENABLE	4
 
-#define	SUPPORT_BGA_ID	0xb0c5	
-#define	BGA_VRAM_SIZE	16777216
+#define	SUPPORT_BGA_ID	0xb0c4
+#define	BGA_VRAM_SIZE	((BGA_ID == SUPPORT_BGA_ID) ? 8388608 : 16777216)
+
+LOCAL	UH	BGA_ID;
 
 Inline	void	WriteBGA(UH index, UH value)
 {
@@ -47,8 +52,8 @@ Inline	void	WriteBGA(UH index, UH value)
 
 Inline	UH	ReadBGA(UH index)
 {
-	out_w(BGA_INDEX, index);
-	return in_w(BGA_DATA);
+	out_h(BGA_INDEX, index);
+	return in_h(BGA_DATA);
 }
 
 LOCAL	ERR	BGAinit(void)
@@ -60,7 +65,7 @@ LOCAL	ERR	BGAinit(void)
 		    inPciConfH(Vinf.pciaddr, PCR_COMMAND) | 0x0007);
 
 	/* check BGA ID */
-	if (ReadBGA(regID) < SUPPORT_BGA_ID) {
+	if ((BGA_ID = ReadBGA(regID)) < SUPPORT_BGA_ID) {
 		err = ER_OBJ;
 		goto fin0;
 	}
@@ -136,8 +141,8 @@ EXPORT	W	BGAInit(void)
 	ERR	err;
 
 	/* probe device */
-	Vinf.pciaddr = searchPciDev(VENDOR_BOCHS, DEVICE_BGA);
-	if (Vinf.pciaddr < 0) {
+	if ((Vinf.pciaddr = searchPciDev(VENDOR_BOCHS, DEVICE_BGA)) < 0 &&
+	    (Vinf.pciaddr = searchPciDev(VENDOR_INNOTEK, DEVICE_VBOX)) < 0) {
 		err = 0;
 		goto fin0;
 	}
